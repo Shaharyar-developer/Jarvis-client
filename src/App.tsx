@@ -9,6 +9,7 @@ function App() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [timeStartedSpeaking, setTimeStartedSpeaking] = useState<number>(0);
   const [isSending, setIsSending] = useState(false);
+  const [text, setText] = useState<string>("");
 
   const timeStartedSpeakingRef = useRef(timeStartedSpeaking);
   const chunksRef = useRef<Blob[]>([]);
@@ -109,7 +110,7 @@ function App() {
       const base64Data = base64String.split(",")[1];
 
       try {
-        const response = await fetch("http://localhost:4000/audio", {
+        const response = await fetch("http://localhost:4000/new", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -123,11 +124,21 @@ function App() {
         if (!response.ok) {
           throw new Error(`HTTP error! Status: ${response.status}`);
         }
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        if (!reader) {
+          throw new Error("Failed to get reader");
+        }
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) {
+            break;
+          }
+          const text = decoder.decode(value);
+          setText((prev) => prev + text);
+        }
 
-        const result = await response.json();
-        console.log(result);
         setIsSending(false);
-        return result;
       } catch (error) {
         console.error("Failed to fetch:", error);
         setIsSending(false);
@@ -148,6 +159,7 @@ function App() {
         transition={{ type: "spring" }}
         className="bg-neutral-200 rounded-full fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
       />
+      <p>{text}</p>
     </>
   );
 }
