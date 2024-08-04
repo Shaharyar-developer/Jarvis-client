@@ -3,6 +3,13 @@ import Meyda from "meyda";
 import { useEffect, useRef, useState } from "react";
 import Bumblebee from "bumblebee-hotword";
 
+type Features = {
+  rms: number;
+  energy: number;
+  spectralCentroid: number;
+  zcr: number;
+};
+
 const bumblebee = new Bumblebee();
 
 function App() {
@@ -22,7 +29,7 @@ function App() {
   useEffect(() => {
     bumblebee.setWorkersPath("/bumblebee-workers");
     bumblebee.addHotword("jarvis");
-    bumblebee.setSensitivity(0.8);
+    bumblebee.setSensitivity(1);
     bumblebee.start();
 
     navigator.mediaDevices
@@ -67,8 +74,8 @@ function App() {
           audioContext,
           source,
           bufferSize: 512,
-          featureExtractors: ["rms", "energy"],
-          callback: (features: any) => {
+          featureExtractors: ["rms", "energy", "spectralCentroid", "zcr"],
+          callback: (features: Features) => {
             if (Date.now() - timeStartedSpeakingRef.current > 2000) {
               if (isRecording) {
                 mediaRecorder.stop();
@@ -76,7 +83,12 @@ function App() {
                 setIsSpeaking(false);
               }
             }
-            if (features.energy > 0.1) {
+            if (
+              features.energy > 0.1 &&
+              features.zcr < 20 &&
+              features.zcr > 10 &&
+              features.spectralCentroid < 20
+            ) {
               setTimeStartedSpeaking(Date.now());
             }
           },
@@ -200,7 +212,9 @@ function App() {
         transition={{ type: "spring" }}
         className="bg-neutral-200 rounded-full fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
       />
-      <p className="fixed top-[70%] px-24 w-full text-center">{text}</p>
+      <p className="fixed top-[70%] px-24 w-full text-center text-3xl">
+        {text}
+      </p>
     </>
   );
 }
