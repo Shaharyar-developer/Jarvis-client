@@ -1,0 +1,57 @@
+name: Change Commit
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  send-webhook:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Get commit details
+        id: get_commit
+        run: |
+          MESSAGE=$(git log --format=%B -n 1 ${{ github.event.after }} | jq -Rs .)
+          if [ -z "$MESSAGE" ]; then
+            echo "Failed to get commit message"
+            exit 1
+          fi
+          echo "message=$MESSAGE" >> $GITHUB_ENV
+
+          AUTHOR=$(git log --format=%an -n 1 ${{ github.event.after }} | jq -Rs .)
+          if [ -z "$AUTHOR" ]; then
+            echo "Failed to get author name"
+            exit 1
+          fi
+          echo "author=$AUTHOR" >> $GITHUB_ENV
+
+          CHANGES=$(git diff --shortstat ${{ github.event.before }} ${{ github.event.after }} | jq -Rs .)
+          echo "changes=$CHANGES" >> $GITHUB_ENV
+
+          COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.event.after }}"
+          echo "commit_url=$COMMIT_URL" >> $GITHUB_ENV
+          FOOTER=$(date)
+          echo "footer=$FOOTER" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Send POST request
+        env:
+          message: ${{ env.message }}
+          changes: ${{ env.changes }}
+          commit_url: ${{ env.commit_url }}
+          footer: ${{ env.footer }}
+          author: ${{ env.author }}
+        run: |
+          PAYLOAD=$(jq -n -s \
+                  --arg title "$message" \
+                  --arg description "Changes - $changes" \
+                  --arg url "$commit_url" \
+                  --arg footer "$footer" \
+                  --arg author "$author" \
+                  '{title: $title, description: $description, url: $url, footer: $footer, author: $author}')
+          curl -X POST -H "Content-Type: application/json" -d "$PAYLOAD" https://jarvis-bot-api.vercel.app/
