@@ -8,12 +8,12 @@ const bumblebee = new Bumblebee();
 function App() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [timeStartedSpeaking, setTimeStartedSpeaking] = useState<number>(0);
-  const [isSending, setIsSending] = useState(false);
   const [text, setText] = useState<string>("");
 
   const timeStartedSpeakingRef = useRef(timeStartedSpeaking);
   const chunksRef = useRef<Blob[]>([]);
   const audioUrlRef = useRef<string | null>(null);
+  const isSendingRef = useRef<boolean>(false);
 
   useEffect(() => {
     timeStartedSpeakingRef.current = timeStartedSpeaking;
@@ -95,13 +95,12 @@ function App() {
   }, []);
 
   async function sendBlob(blob: Blob) {
-    if (isSending) {
+    if (isSendingRef.current) {
       console.log("Previous request is still in progress.");
       return; // Prevent new requests if one is already in progress
     }
-
-    setIsSending(true); // Set the flag to indicate that a request is in progress
-
+    setText("");
+    isSendingRef.current = true; // Set the flag to indicate that a request is in progress
     const reader = new FileReader();
 
     reader.onloadend = async () => {
@@ -110,14 +109,27 @@ function App() {
       const base64Data = base64String.split(",")[1];
 
       try {
+        const transcriptionRequest = await fetch(
+          "http://localhost:4000/audio/transcribe",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              base64Data,
+              contentType: blob.type,
+            }),
+          },
+        );
+        const { transcription } = await transcriptionRequest.json();
         const response = await fetch("http://localhost:4000/new", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            base64Data,
-            contentType: blob.type,
+            prompt: transcription,
           }),
         });
 
@@ -129,6 +141,7 @@ function App() {
         if (!reader) {
           throw new Error("Failed to get reader");
         }
+        let temp_text = "";
         while (true) {
           const { done, value } = await reader.read();
           if (done) {
@@ -136,12 +149,40 @@ function App() {
           }
           const text = decoder.decode(value);
           setText((prev) => prev + text);
+          temp_text += text;
         }
 
-        setIsSending(false);
+        const speechRequest = await fetch(
+          "http://localhost:4000/audio/speech",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              prompt: temp_text,
+            }),
+          },
+        );
+        const data = await speechRequest.json();
+        const audioBlob = new Blob(
+          [
+            Uint8Array.from(atob(data.base64Data as string), (c) =>
+              c.charCodeAt(0),
+            ),
+          ],
+          {
+            type: "audio/wav; codecs=opus",
+          },
+        );
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        await audio.play();
+
+        isSendingRef.current = false;
       } catch (error) {
         console.error("Failed to fetch:", error);
-        setIsSending(false);
+        isSendingRef.current = false;
       }
     };
 
@@ -159,7 +200,7 @@ function App() {
         transition={{ type: "spring" }}
         className="bg-neutral-200 rounded-full fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
       />
-      <p>{text}</p>
+      <p className="fixed top-[70%] px-24 w-full text-center">{text}</p>
     </>
   );
 }
